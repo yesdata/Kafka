@@ -1,0 +1,182 @@
+环境准备
+集群规划
+hadoop001	hadoop002	hadoop003
+zk	zk	zk
+kafka	kafka	kafka
+安装包下载
+Kafka安装包
+
+安装JDK（略）
+安装Zookeeper
+解压安装
+解压zookeeper安装包到/opt/software/目录下
+
+[root@hadoop001 apps]$ tar -zxvf zookeeper-3.4.10.tar.gz -C /opt/software/
+在/opt/software/zookeeper-3.4.10/这个目录下创建zkData
+
+mkdir -p zkData
+重命名/opt/software/zookeeper-3.4.10/conf这个目录下的zoo_sample.cfg为zoo.cfg
+
+mv zoo_sample.cfg zoo.cfg
+配置zoo.cfg文件
+具体配置
+
+dataDir=/opt/software/zookeeper-3.4.10/zkData
+
+增加如下配置
+#######################cluster##########################
+server.1=hadoop001:2888:3888
+server.2=hadoop002:2888:3888
+server.3=hadoop003:2888:3888
+配置参数解读
+
+Server.A=B:C:D
+
+A是一个数字，表示这个是第几号服务器；
+
+B是这个服务器的ip地址；
+
+C是这个服务器与集群中的Leader服务器交换信息的端口；
+
+D是万一集群中的Leader服务器挂了，需要一个端口来重新进行选举，选出一个新的Leader，而这个端口就是用来执行选举时服务器相互通信的端口。
+
+集群模式下配置一个文件myid，这个文件在dataDir目录下，这个文件里面有一个数据就是A的值，Zookeeper启动时读取此文件，拿到里面的数据与zoo.cfg里面的配置信息比较从而判断到底是哪个server。
+
+集群操作
+在/opt/software/zookeeper-3.4.10/zkData目录下创建一个myid的文件
+
+touch myid
+添加myid文件，注意一定要在linux里面创建，在notepad++里面很可能乱码
+
+编辑myid文件
+
+vi myid
+
+在文件中添加与server对应的编号：如1
+拷贝配置好的zookeeper到其他机器上
+
+scp -r zookeeper-3.4.10/ root@hadoop002:/opt/software/
+scp -r zookeeper-3.4.10/ root@hadoop003:/opt/software/
+
+并分别修改myid文件中内容为2、3
+分别启动zookeeper
+
+[root@hadoop001 zookeeper-3.4.10]# bin/zkServer.sh start
+[root@hadoop002 zookeeper-3.4.10]# bin/zkServer.sh start
+[root@hadoop003 zookeeper-3.4.10]# bin/zkServer.sh start
+查看状态
+
+[root@hadoop001 zookeeper-3.4.10]# bin/zkServer.sh status
+JMX enabled by default
+Using config: /opt/software/zookeeper-3.4.10/bin/../conf/zoo.cfg
+Mode: follower
+[root@hadoop002 zookeeper-3.4.10]# bin/zkServer.sh status
+JMX enabled by default
+Using config: /opt/software/zookeeper-3.4.10/bin/../conf/zoo.cfg
+Mode: leader
+[root@hadoop003 zookeeper-3.4.5]# bin/zkServer.sh status
+JMX enabled by default
+Using config: /opt/software/zookeeper-3.4.10/bin/../conf/zoo.cfg
+Mode: follower
+Kafka集群部署
+解压安装包
+
+[root@hadoop001 apps]$ tar -zxvf kafka_2.11-0.11.0.0.tgz -C /opt/software/
+修改解压后的文件名称
+
+[root@hadoop001 software]$ mv kafka_2.11-0.11.0.0/ kafka
+在/opt/software/kafka目录下创建logs文件夹
+
+[root@hadoop001 kafka]$ mkdir logs
+修改配置文件
+
+[root@hadoop001 kafka]$ cd config/
+[root@hadoop001 config]$ vi server.properties
+输入以下内容
+
+#broker的全局唯一编号，不能重复
+broker.id=0    
+#是否允许删除topic
+delete.topic.enable=true
+#处理网络请求的线程数量
+num.network.threads=3
+#用来处理磁盘IO的线程数量
+num.io.threads=8
+#发送套接字的缓冲区大小
+socket.send.buffer.bytes=102400
+#接收套接字的缓冲区大小
+socket.receive.buffer.bytes=102400
+#请求套接字的最大缓冲区大小
+socket.request.max.bytes=104857600
+#kafka运行日志存放的路径
+log.dirs=/opt/software/kafka/logs
+#topic在当前broker上的分区个数
+num.partitions=1
+#用来恢复和清理data下数据的线程数量
+num.recovery.threads.per.data.dir=1
+#segment文件保留的最长时间，超时将被删除
+log.retention.hours=168
+#配置连接Zookeeper集群地址
+zookeeper.connect=hadoop001:2181,hadoop002:2181,hadoop003:2181
+配置环境变量
+
+[root@hadoop001 software]# vi /etc/profile
+
+#KAFKA_HOME
+export KAFKA_HOME=/opt/software/kafka
+export PATH=$PATH:$KAFKA_HOME/bin
+[root@hadoop001 module]# source /etc/profile
+分发安装包
+
+scp -r /opt/software/kafka root@hadoop002:/opt/software/
+scp -r /opt/software/kafka root@hadoop003:/opt/software/
+分别在hadoop002和hadoop003上修改配置文件/opt/software/kafka/config/server.properties中的broker.id=1、broker.id=2
+
+注：broker.id不得重复
+
+启动集群
+
+依次在hadoop001、hadoop002、hadoop003节点上启动kafka
+
+[root@hadoop001 kafka]$ bin/kafka-server-start.sh config/server.properties &
+[root@hadoop002 kafka]$ bin/kafka-server-start.sh config/server.properties &
+[root@hadoop003 kafka]$ bin/kafka-server-start.sh config/server.properties &
+关闭集群
+
+[root@hadoop001 kafka]$ bin/kafka-server-stop.sh stop
+[root@hadoop002 kafka]$ bin/kafka-server-stop.sh stop
+[root@hadoop003 kafka]$ bin/kafka-server-stop.sh stop
+Kafka命令行操作
+查看当前服务器中的所有topic
+
+[root@hadoop001 kafka]$ bin/kafka-topics.sh --zookeeper hadoop001:2181 --list
+创建topic
+
+[root@hadoop001 kafka]$ bin/kafka-topics.sh --zookeeper hadoop001:2181 --create --replication-factor 3 --partitions 1 --topic first
+选项说明：
+
+–topic 定义topic名
+
+–replication-factor 定义副本数
+
+–partitions 定义分区数
+
+删除topic
+
+[root@hadoop001 kafka]$ bin/kafka-topics.sh --zookeeper hadoop001:2181 --delete --topic first
+需要server.properties中设置delete.topic.enable=true否则只是标记删除或者直接重启。
+
+发送消息
+
+[root@hadoop001 kafka]$ bin/kafka-console-producer.sh --broker-list hadoop001:9092 --topic first
+>hello world
+>atguigu  atguigu
+消费消息
+
+[root@hadoop002 kafka]$ bin/kafka-console-consumer.sh --zookeeper hadoop001:2181 --from-beginning --topic first
+–from-beginning：会把first主题中以往所有的数据都读取出来。根据业务场景选择是否增加该配置。
+
+查看某个Topic的详情
+
+[root@hadoop001 kafka]$ bin/kafka-topics.sh --zookeeper hadoop001:2181 --describe --topic first
+
